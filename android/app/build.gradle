@@ -84,6 +84,13 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        externalNativeBuild {
+            cmake {
+                cppFlags "-O2 -frtti -fexceptions -Wall -fstack-protector-all"
+                arguments "-DANDROID_STL=c++_shared",
+                          "-DREACT_NATIVE_DIR=${rootDir}/../node_modules/react-native"
+            }
+        }
     }
     signingConfigs {
         debug {
@@ -105,6 +112,16 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }
+
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+        }
+    }
+
+    buildFeatures {
+        prefab true
+    }
 }
 
 dependencies {
@@ -117,3 +134,5 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+task prepareKotlinBuildScriptModel {}

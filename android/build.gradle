@@ -2,7 +2,7 @@ buildscript {
     ext {
         buildToolsVersion = "34.0.0"
         minSdkVersion = 23
-        compileSdkVersion = 34
+        compileSdkVersion = 35
         targetSdkVersion = 34
         ndkVersion = "26.1.10909125"
         kotlinVersion = "1.9.24"
@@ -19,3 +19,17 @@ buildscript {
 }
 
 apply plugin: "com.facebook.react.rootproject"
+
+allprojects {
+    configurations.all {
+        resolutionStrategy {
+            force "androidx.core:core:1.15.0"
+            force "androidx.core:core-ktx:1.15.0"
+        }
+    }
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        kotlinOptions {
+            freeCompilerArgs += ["-opt-in=com.facebook.react.common.annotations.FrameworkAPI"]
+        }
+    }
+}

@@ -1,0 +1,26 @@
+# Latest Implementation Phase (Phase 3)
+
+## Goal
+Implement Real-time Live Subject Detection (Auto-detect edges while the camera is actively previewing, before taking a photo).
+
+## Architecture & Logic
+To achieve the "green box" live edge detection overlay while the user is pointing the camera at a document, we must process camera frames in real-time.
+
+1.  **Vision Camera Frame Processors**:
+    *   We will configure `react-native-worklets-core` to enable Frame Processor support in `react-native-vision-camera`.
+    *   We will create a custom C++ Frame Processor Plugin.
+
+2.  **Real-Time Processing Pipeline**:
+    *   For every frame (running at ~30fps), the C++ plugin will receive the raw image buffer.
+    *   To maintain performance and prevent device overheating, the frame will be aggressively downscaled (e.g., to 480p).
+    *   The same OpenCV logic (`EdgeDetector.cpp`) will run: Grayscale -> Gaussian Blur -> Canny Edge Detection -> Contour Finding.
+
+3.  **UI Overlay**:
+    *   The C++ plugin will synchronously return the coordinates `(x, y)` of the 4 corners of the document back to the Javascript UI thread (Worklet).
+    *   The React Native UI will render an animated SVG polygon (a bounding box) over the camera view that tracks the document in real-time.
+
+## Next Steps to Execute Tomorrow
+1.  Run `npm install react-native-worklets-core`.
+2.  Update `babel.config.js` to include the worklets plugin.
+3.  Write the JSI bindings for the Vision Camera Frame Processor plugin in C++.
+4.  Update `App.tsx` to include a `useFrameProcessor` hook that calls the native plugin and draws an overlay.
