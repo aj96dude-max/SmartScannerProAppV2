@@ -59,6 +59,18 @@ public:
     }
 
     /**
+     * Grayscale: Simple BGR to GRAY conversion (preserves shadows).
+     */
+    static Mat applyGrayscale(const Mat& src) {
+        Mat gray;
+        cvtColor(src, gray, COLOR_BGR2GRAY);
+        // Convert back to BGR so it matches expected Mat formats down the line
+        Mat result;
+        cvtColor(gray, result, COLOR_GRAY2BGR);
+        return result;
+    }
+
+    /**
      * Enhanced (Magic Color): Sharpens text, removes shadows, deeply corrects white balance.
      */
     static Mat applyMagicColor(const Mat& src) {

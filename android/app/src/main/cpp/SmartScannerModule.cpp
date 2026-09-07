@@ -117,8 +117,12 @@ void installSmartScanner(Runtime& jsiRuntime) {
                 filtered = ImageEnhancer::applyMagicColor(image);
             } else if (type == "bw") {
                 filtered = ImageEnhancer::applyBlackAndWhite(image);
+            } else if (type == "grayscale") {
+                filtered = ImageEnhancer::applyGrayscale(image);
+            } else if (type == "original") {
+                filtered = image.clone(); 
             } else {
-                filtered = image; // Default no-op
+                filtered = image.clone(); // Default fallback
             }
 
             if (filtered.empty()) return facebook::jsi::String::createFromUtf8(runtime, path);

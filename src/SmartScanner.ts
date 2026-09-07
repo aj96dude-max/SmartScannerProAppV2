@@ -27,11 +27,11 @@ installSmartScanner();
 declare global {
   var detectDocumentEdges: (path: string, roiW: number, roiH: number) => any;
   var cropImage: (path: string, tlx: number, tly: number, trx: number, tr_y: number, brx: number, bry: number, blx: number, bly: number) => string | false;
-  var applyFilter: (path: string, type: 'lightened' | 'magic_color' | 'bw') => string | false;
+  var applyFilter: (path: string, type: 'lightened' | 'magic_color' | 'bw' | 'original' | 'grayscale') => string | false;
   var removeHand: (path: string) => string | false;
 }
 
-export type FilterType = 'lightened' | 'magic_color' | 'bw';
+export type FilterType = 'lightened' | 'magic_color' | 'bw' | 'original' | 'grayscale';
 
 export interface Point {
   x: number;

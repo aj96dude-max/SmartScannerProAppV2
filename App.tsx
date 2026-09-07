@@ -21,13 +21,16 @@ export default function App() {
   const [appState, setAppState] = useState<AppState>('CAMERA');
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentImage, setCurrentImage] = useState<string | null>(null);
+  const [baseCroppedImage, setBaseCroppedImage] = useState<string | null>(null);
   const [imageSize, setImageSize] = useState<{width: number, height: number} | null>(null);
 
   const [detectedEdges, setDetectedEdges] = useState<any>(null);
   const [liveEdges, setLiveEdges] = useState<any>(null);
   const [viewSize, setViewSize] = useState({width: 0, height: 0});
+  const [isAutoCapture, setIsAutoCapture] = useState(true);
   
   const lastEdgesRef = useRef<any>(null);
+  const lockStartTimeRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!hasPermission) requestPermission();
@@ -37,6 +40,7 @@ export default function App() {
     if (!newEdges) {
       setLiveEdges(null);
       lastEdgesRef.current = null;
+      lockStartTimeRef.current = null;
       return;
     }
     
@@ -44,8 +48,19 @@ export default function App() {
       // Phase 2: Haptic Vibration Trigger on stable lock
       Vibration.vibrate(40);
       lastEdgesRef.current = newEdges;
+      lockStartTimeRef.current = Date.now();
       setLiveEdges(newEdges);
       return;
+    }
+
+    // Check Auto-Capture lock
+    if (isAutoCapture && appState === 'CAMERA' && !isProcessing && lockStartTimeRef.current) {
+      if (Date.now() - lockStartTimeRef.current > 1500) {
+        // Locked on for 1.5 seconds, trigger auto-capture
+        lockStartTimeRef.current = null; // Prevent multi-trigger
+        Vibration.vibrate(100); // Stronger vibration for capture
+        capturePhoto();
+      }
     }
 
     const ALPHA = 0.25; // Smoothing factor to eliminate jitter
@@ -152,6 +167,7 @@ export default function App() {
         Alert.alert('No Edges Found', 'Falling back to manual crop box.');
       }
       setAppState('CAPTURED');
+      lockStartTimeRef.current = null;
     } catch (e: any) {
       Alert.alert('Capture Error', e.message);
     } finally {
@@ -225,6 +241,7 @@ export default function App() {
         const resultPath = SmartScanner.crop(currentImage, detectedEdges);
         if (resultPath) {
           setCurrentImage(resultPath);
+          setBaseCroppedImage(resultPath);
           setAppState('CROPPED');
         } else {
           Alert.alert('Crop Failed', 'Native engine failed to crop.');
@@ -235,12 +252,19 @@ export default function App() {
     }, 100);
   };
 
-  const handleFilter = (type: 'lightened' | 'magic_color' | 'bw') => {
-    if (!currentImage) return;
+  const handleFilter = (type: 'lightened' | 'magic_color' | 'bw' | 'original' | 'grayscale') => {
+    if (!baseCroppedImage) return;
+    
+    if (type === 'original') {
+      setCurrentImage(baseCroppedImage);
+      setAppState('CROPPED');
+      return;
+    }
+
     setIsProcessing(true);
     setTimeout(() => {
       try {
-        const resultPath = SmartScanner.applyFilter(currentImage, type);
+        const resultPath = SmartScanner.applyFilter(baseCroppedImage, type);
         if (resultPath) {
           setCurrentImage(resultPath);
           setAppState('FILTERED');
@@ -255,9 +279,11 @@ export default function App() {
 
   const resetCamera = () => {
     setCurrentImage(null);
+    setBaseCroppedImage(null);
     setImageSize(null);
     setAppState('CAMERA');
     setDetectedEdges(null);
+    lockStartTimeRef.current = null;
   };
 
   if (!hasPermission) return <View style={styles.center}><Text>Requesting Permission...</Text></View>;
@@ -291,7 +317,9 @@ export default function App() {
               <Rect x="7.5%" y="17.5%" width="85%" height="65%" fill="transparent" stroke="rgba(255,255,255,0.8)" strokeWidth="2" strokeDasharray="10, 10" rx="12" />
             </Svg>
             <View style={{ position: 'absolute', top: '17.5%', width: '100%', alignItems: 'center', marginTop: -40 }}>
-              <Text style={styles.targetingText}>Position document within the frame</Text>
+              <Text style={styles.targetingText}>
+                {isAutoCapture ? 'Hold still to auto-capture...' : 'Position document within the frame'}
+              </Text>
             </View>
           </View>
           {liveEdges && liveEdges.found && (
@@ -315,7 +343,9 @@ export default function App() {
               <View style={styles.captureButtonInner} />
             </TouchableOpacity>
             
-            <View style={styles.galleryButtonPlaceholder} />
+            <TouchableOpacity style={styles.galleryButton} onPress={() => setIsAutoCapture(!isAutoCapture)}>
+              <Text style={styles.autoButtonText}>{isAutoCapture ? 'AUTO' : 'MANUAL'}</Text>
+            </TouchableOpacity>
           </View>
         </>
       ) : (
@@ -343,15 +373,24 @@ export default function App() {
               <View>
                 <Text style={styles.sectionTitle}>Apply Filter</Text>
                 <View style={styles.row}>
+                  <TouchableOpacity style={[styles.actionBtn, styles.flexBtn, {backgroundColor: '#555'}]} onPress={() => handleFilter('original')}>
+                    <Text style={styles.actionBtnText}>Original</Text>
+                  </TouchableOpacity>
                   <TouchableOpacity style={[styles.actionBtn, styles.flexBtn]} onPress={() => handleFilter('lightened')}>
                     <Text style={styles.actionBtnText}>Lighten</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={[styles.actionBtn, styles.flexBtn, {backgroundColor: '#34C759'}]} onPress={() => handleFilter('magic_color')}>
                     <Text style={styles.actionBtnText}>Magic</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={[styles.actionBtn, styles.flexBtn, {backgroundColor: '#666'}]} onPress={() => handleFilter('bw')}>
+                </View>
+                <View style={styles.row}>
+                  <TouchableOpacity style={[styles.actionBtn, styles.flexBtn, {backgroundColor: '#888'}]} onPress={() => handleFilter('grayscale')}>
+                    <Text style={styles.actionBtnText}>Gray</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.actionBtn, styles.flexBtn, {backgroundColor: '#444'}]} onPress={() => handleFilter('bw')}>
                     <Text style={styles.actionBtnText}>B & W</Text>
                   </TouchableOpacity>
+                  <View style={styles.flexBtn} />
                 </View>
                 
                 <TouchableOpacity style={[styles.actionBtn, {backgroundColor: '#FF9500', marginTop: 20}]} onPress={exportToGallery}>
@@ -384,7 +423,7 @@ const styles = StyleSheet.create({
   captureButtonInner: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#FFF' },
   galleryButton: { width: 50, height: 50, borderRadius: 25, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
   galleryButtonText: { fontSize: 24 },
-  galleryButtonPlaceholder: { width: 50 },
+  autoButtonText: { fontSize: 10, color: '#FFF', fontWeight: 'bold' },
   previewContainer: { flex: 1, paddingTop: 40 },
   previewImageWrapper: { width: '100%', height: '50%', backgroundColor: '#222' },
   controlsScroll: { flex: 1, width: '100%' },
