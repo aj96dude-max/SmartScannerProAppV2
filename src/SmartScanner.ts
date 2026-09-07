@@ -25,7 +25,7 @@ installSmartScanner();
  * Type declarations for the globally injected JSI functions.
  */
 declare global {
-  var detectDocumentEdges: (path: string) => any;
+  var detectDocumentEdges: (path: string, roiW: number, roiH: number) => any;
   var cropImage: (path: string, tlx: number, tly: number, trx: number, tr_y: number, brx: number, bry: number, blx: number, bly: number) => string | false;
   var applyFilter: (path: string, type: 'lightened' | 'magic_color' | 'bw') => string | false;
   var removeHand: (path: string) => string | false;
@@ -60,10 +60,12 @@ export const SmartScanner = {
   /**
    * Detects document edges in a static image.
    * @param imagePath Local file path to the image
+   * @param roiWidthPct ROI width percentage
+   * @param roiHeightPct ROI height percentage
    * @returns EdgesResult containing the 4 corners of the document, or found: false
    */
-  detectEdges(imagePath: string): EdgesResult {
-    return global.detectDocumentEdges(imagePath);
+  detectEdges(imagePath: string, roiWidthPct: number = 1.0, roiHeightPct: number = 1.0): EdgesResult {
+    return global.detectDocumentEdges(imagePath, roiWidthPct, roiHeightPct);
   },
 
   /**

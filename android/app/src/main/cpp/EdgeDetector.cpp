@@ -32,11 +32,8 @@ public:
         GaussianBlur(gray, blurred, Size(7, 7), 0);
 
         // 3. Canny Edge Detection
-        // Using adaptive thresholds based on median image pixel intensity
-        double medianIntensity = medianMat(gray);
-        double lower = max(0.0, (1.0 - 0.33) * medianIntensity);
-        double upper = min(255.0, (1.0 + 0.33) * medianIntensity);
-        Canny(blurred, edged, lower, upper);
+        // Using standard document scanning thresholds instead of median (which fails on dark desks)
+        Canny(blurred, edged, 75, 200);
 
         // 4. Morphological Close to connect broken edge lines
         Mat kernel = getStructuringElement(MORPH_RECT, Size(5, 5));
@@ -53,24 +50,41 @@ public:
 
         double totalArea = gray.cols * gray.rows;
 
-        // 6. Iterate to find the largest valid 4-point contour (a quadrilateral)
+        // 6. Iterate to find the largest valid contour
         for (size_t i = 0; i < min(contours.size(), (size_t)5); i++) {
             double cArea = contourArea(contours[i]);
             
-            // Discard if the contour takes up less than 15% of the frame area
-            if (cArea < totalArea * 0.15) {
+            // Discard if the contour takes up less than 5% of the frame area
+            if (cArea < totalArea * 0.05) {
                 break; // Since they are sorted, subsequent contours will also be too small
             }
 
-            vector<Point> approx;
-            double peri = arcLength(contours[i], true);
-            // Approximate the polygonal curve
-            approxPolyDP(contours[i], approx, 0.02 * peri, true);
+            // 1. Smooth it out with a Convex Hull
+            vector<Point> hull;
+            convexHull(contours[i], hull);
 
-            // Strict 4-point check: Only return if it has exactly 4 vertices
-            if (approx.size() == 4 && isContourConvex(approx)) {
+            // 2. Try to approximate 4 corners
+            vector<Point> approx;
+            double peri = arcLength(hull, true);
+            approxPolyDP(hull, approx, 0.02 * peri, true);
+
+            if (approx.size() == 4) {
                 docQuad.found = true;
                 orderPoints(approx, docQuad);
+                break;
+            } else {
+                // Fallback: Use minAreaRect to guarantee a 4-point bounding box
+                RotatedRect boundingBox = minAreaRect(contours[i]);
+                Point2f rectPoints[4];
+                boundingBox.points(rectPoints);
+                
+                vector<Point> fallbackPts;
+                for(int j=0; j<4; j++) {
+                    fallbackPts.push_back(Point(rectPoints[j].x, rectPoints[j].y));
+                }
+                
+                docQuad.found = true;
+                orderPoints(fallbackPts, docQuad);
                 break;
             }
         }

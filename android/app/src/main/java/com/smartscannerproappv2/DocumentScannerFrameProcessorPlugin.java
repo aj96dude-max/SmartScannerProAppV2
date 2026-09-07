@@ -14,8 +14,8 @@ import java.util.HashMap;
 
 public class DocumentScannerFrameProcessorPlugin extends FrameProcessorPlugin {
     
-    // Declare the native JNI method
-    private native float[] detectEdgesFromBuffer(ByteBuffer yBuffer, int width, int height, int rowStride);
+    // Declare the native JNI method with ROI parameters
+    private native float[] detectEdgesFromBuffer(ByteBuffer yBuffer, int width, int height, int rowStride, float roiWidthPct, float roiHeightPct);
 
     public DocumentScannerFrameProcessorPlugin(VisionCameraProxy proxy, @Nullable Map<String, Object> options) {
         super();
@@ -40,8 +40,15 @@ public class DocumentScannerFrameProcessorPlugin extends FrameProcessorPlugin {
         int height = image.getHeight();
         int rowStride = yPlane.getRowStride();
 
+        float roiWidthPct = 1.0f;
+        float roiHeightPct = 1.0f;
+        if (arguments != null) {
+            if (arguments.containsKey("roiWidth")) roiWidthPct = ((Double) arguments.get("roiWidth")).floatValue();
+            if (arguments.containsKey("roiHeight")) roiHeightPct = ((Double) arguments.get("roiHeight")).floatValue();
+        }
+
         // Call C++ JNI method
-        float[] edges = detectEdgesFromBuffer(yBuffer, width, height, rowStride);
+        float[] edges = detectEdgesFromBuffer(yBuffer, width, height, rowStride, roiWidthPct, roiHeightPct);
         if (edges == null || edges.length != 8) return null;
         
         Map<String, Object> result = new HashMap<>();

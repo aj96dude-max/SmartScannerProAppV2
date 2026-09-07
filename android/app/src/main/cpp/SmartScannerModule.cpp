@@ -17,11 +17,14 @@ std::string jsiStringToStdString(Runtime& runtime, const Value& val) {
 
 void installSmartScanner(Runtime& jsiRuntime) {
     
-    // 1. detectDocumentEdges(imagePath)
+    // 1. detectDocumentEdges(imagePath, roiWidthPct, roiHeightPct)
     auto detectEdges = Function::createFromHostFunction(
-        jsiRuntime, PropNameID::forAscii(jsiRuntime, "detectDocumentEdges"), 1, 
+        jsiRuntime, PropNameID::forAscii(jsiRuntime, "detectDocumentEdges"), 3, 
         [](Runtime& runtime, const Value& thisValue, const Value* arguments, size_t count) -> Value {
             std::string path = jsiStringToStdString(runtime, arguments[0]);
+            float roiWidthPct = count > 1 ? arguments[1].asNumber() : 1.0f;
+            float roiHeightPct = count > 2 ? arguments[2].asNumber() : 1.0f;
+            
             Mat image = imread(path);
             
             Object result(runtime);
@@ -30,15 +33,34 @@ void installSmartScanner(Runtime& jsiRuntime) {
                 return result;
             }
 
-            EdgeDetector::DocumentQuad quad = EdgeDetector::detectDocumentEdges(image);
+            int width = image.cols;
+            int height = image.rows;
+            int roiW = (int)(width * roiWidthPct);
+            int roiH = (int)(height * roiHeightPct);
+            int roiX = (width - roiW) / 2;
+            int roiY = (height - roiH) / 2;
+            Rect roi(roiX, roiY, roiW, roiH);
+            Mat croppedMat = image(roi);
+
+            // Downscale to 640px to match live frame processor behavior exactly
+            float scale = 1.0f;
+            int maxDim = max(roiW, roiH);
+            if (maxDim > 640) {
+                scale = 640.0f / maxDim;
+            }
+            Mat smallMat;
+            resize(croppedMat, smallMat, Size(), scale, scale, INTER_AREA);
+
+            EdgeDetector::DocumentQuad quad = EdgeDetector::detectDocumentEdges(smallMat);
             result.setProperty(runtime, "found", quad.found);
             
             if (quad.found) {
+                float invScale = 1.0f / scale;
                 Object tl(runtime), tr(runtime), br(runtime), bl(runtime);
-                tl.setProperty(runtime, "x", quad.tl.x); tl.setProperty(runtime, "y", quad.tl.y);
-                tr.setProperty(runtime, "x", quad.tr.x); tr.setProperty(runtime, "y", quad.tr.y);
-                br.setProperty(runtime, "x", quad.br.x); br.setProperty(runtime, "y", quad.br.y);
-                bl.setProperty(runtime, "x", quad.bl.x); bl.setProperty(runtime, "y", quad.bl.y);
+                tl.setProperty(runtime, "x", quad.tl.x * invScale + roiX); tl.setProperty(runtime, "y", quad.tl.y * invScale + roiY);
+                tr.setProperty(runtime, "x", quad.tr.x * invScale + roiX); tr.setProperty(runtime, "y", quad.tr.y * invScale + roiY);
+                br.setProperty(runtime, "x", quad.br.x * invScale + roiX); br.setProperty(runtime, "y", quad.br.y * invScale + roiY);
+                bl.setProperty(runtime, "x", quad.bl.x * invScale + roiX); bl.setProperty(runtime, "y", quad.bl.y * invScale + roiY);
                 
                 result.setProperty(runtime, "tl", std::move(tl));
                 result.setProperty(runtime, "tr", std::move(tr));
@@ -68,6 +90,9 @@ void installSmartScanner(Runtime& jsiRuntime) {
 
             std::string outPath = path.substr(0, path.find_last_of('.')) + "_cropped.jpg";
             imwrite(outPath, cropped);
+            
+            image.release();
+            cropped.release();
             
             return facebook::jsi::String::createFromUtf8(runtime, outPath);
         }
@@ -100,6 +125,9 @@ void installSmartScanner(Runtime& jsiRuntime) {
 
             std::string outPath = path.substr(0, path.find_last_of('.')) + "_" + type + ".jpg";
             imwrite(outPath, filtered);
+            
+            image.release();
+            filtered.release();
             
             return facebook::jsi::String::createFromUtf8(runtime, outPath);
         }
@@ -138,7 +166,7 @@ Java_com_smartscannerproappv2_SmartScannerInstallerModule_installNativeJsi(JNIEn
 
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_smartscannerproappv2_DocumentScannerFrameProcessorPlugin_detectEdgesFromBuffer(
-    JNIEnv* env, jobject thiz, jobject yBuffer, jint width, jint height, jint rowStride) {
+    JNIEnv* env, jobject thiz, jobject yBuffer, jint width, jint height, jint rowStride, jfloat roiWidthPct, jfloat roiHeightPct) {
     
     if (yBuffer == nullptr) return nullptr;
     
@@ -147,30 +175,39 @@ Java_com_smartscannerproappv2_DocumentScannerFrameProcessorPlugin_detectEdgesFro
     
     // Create OpenCV Mat from the grayscale Y channel buffer
     Mat yMat(height, width, CV_8UC1, yPtr, rowStride);
+
+    // Calculate ROI
+    int roiW = (int)(width * roiWidthPct);
+    int roiH = (int)(height * roiHeightPct);
+    int roiX = (width - roiW) / 2;
+    int roiY = (height - roiH) / 2;
+
+    Rect roi(roiX, roiY, roiW, roiH);
+    Mat croppedMat = yMat(roi);
     
     // Downscale the image to prevent overheating and maintain 30fps
     // E.g. max dimension 640
     float scale = 1.0f;
-    int maxDim = max(width, height);
+    int maxDim = max(roiW, roiH);
     if (maxDim > 640) {
         scale = 640.0f / maxDim;
     }
     
     Mat smallMat;
-    resize(yMat, smallMat, Size(), scale, scale, INTER_AREA);
+    resize(croppedMat, smallMat, Size(), scale, scale, INTER_AREA);
     
     EdgeDetector::DocumentQuad quad = EdgeDetector::detectDocumentEdges(smallMat);
     if (!quad.found) {
         return nullptr;
     }
     
-    // Scale the coordinates back up to the original frame size
+    // Scale the coordinates back up to the original frame size, and add ROI offset
     float invScale = 1.0f / scale;
     jfloat results[8] = {
-        (float)(quad.tl.x * invScale), (float)(quad.tl.y * invScale),
-        (float)(quad.tr.x * invScale), (float)(quad.tr.y * invScale),
-        (float)(quad.br.x * invScale), (float)(quad.br.y * invScale),
-        (float)(quad.bl.x * invScale), (float)(quad.bl.y * invScale)
+        (float)(quad.tl.x * invScale + roiX), (float)(quad.tl.y * invScale + roiY),
+        (float)(quad.tr.x * invScale + roiX), (float)(quad.tr.y * invScale + roiY),
+        (float)(quad.br.x * invScale + roiX), (float)(quad.br.y * invScale + roiY),
+        (float)(quad.bl.x * invScale + roiX), (float)(quad.bl.y * invScale + roiY)
     };
     
     jfloatArray jArray = env->NewFloatArray(8);
