@@ -1,11 +1,12 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { StatusBar, StyleSheet, View, Text, TouchableOpacity, Alert, Image, ScrollView, ActivityIndicator } from 'react-native';
+import { StatusBar, StyleSheet, View, Text, TouchableOpacity, Alert, Image, ScrollView, ActivityIndicator, Vibration } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Cropper } from './Cropper';
 import { Camera, useCameraDevice, useCameraPermission, useFrameProcessor } from 'react-native-vision-camera';
 import { Worklets } from 'react-native-worklets-core';
-import Svg, { Polygon } from 'react-native-svg';
+import Svg, { Polygon, Defs, Mask, Rect } from 'react-native-svg';
 import { SmartScanner, detectDocumentEdgesLive as detectEdgesPlugin } from './src/SmartScanner';
+import { StorageEngine } from './src/StorageEngine';
 
 import { CameraRoll } from '@react-native-camera-roll/camera-roll';
 import { launchImageLibrary } from 'react-native-image-picker';
@@ -40,6 +41,8 @@ export default function App() {
     }
     
     if (!lastEdgesRef.current) {
+      // Phase 2: Haptic Vibration Trigger on stable lock
+      Vibration.vibrate(40);
       lastEdgesRef.current = newEdges;
       setLiveEdges(newEdges);
       return;
@@ -125,12 +128,15 @@ export default function App() {
     try {
       setIsProcessing(true);
       const photo = await camera.current.takePhoto({ flash: 'off' });
-      const path = photo.path;
-      setCurrentImage(path);
+      
+      // Phase 1: Safe Non-Destructive Storage Pipeline
+      const safePath = await StorageEngine.preserveRawCapture(photo.path);
+      
+      setCurrentImage(safePath);
       setImageSize({ width: photo.width, height: photo.height });
 
       // Pass the identical ROI to the static analyzer so it perfectly matches the live feed!
-      const edges = SmartScanner.detectEdges(path, 0.85, 0.65);
+      const edges = SmartScanner.detectEdges(safePath, 0.85, 0.65);
       
       if (edges && edges.found) {
         setDetectedEdges(edges);
@@ -168,11 +174,14 @@ export default function App() {
         path = path.substring(7);
       }
 
-      setCurrentImage(path);
+      // Phase 1: Safe Non-Destructive Storage Pipeline for gallery images
+      const safePath = await StorageEngine.preserveRawCapture(path);
+
+      setCurrentImage(safePath);
       setImageSize({ width: asset.width || 1000, height: asset.height || 1000 });
 
       // Run static edge detection on full image (100% ROI)
-      const edges = SmartScanner.detectEdges(path, 1.0, 1.0);
+      const edges = SmartScanner.detectEdges(safePath, 1.0, 1.0);
       
       if (edges && edges.found) {
         setDetectedEdges(edges);
@@ -269,18 +278,30 @@ export default function App() {
             pixelFormat="yuv"
             onLayout={(e) => setViewSize({width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height})}
           />
-          <View style={styles.targetingOverlay} pointerEvents="none">
-            <View style={styles.targetingBox} />
-            <Text style={styles.targetingText}>Position document within the frame</Text>
+          <View style={StyleSheet.absoluteFill} pointerEvents="none">
+            {/* Phase 2: Frosted Glass HUD */}
+            <Svg style={StyleSheet.absoluteFill}>
+              <Defs>
+                <Mask id="mask">
+                  <Rect x="0" y="0" width="100%" height="100%" fill="white" />
+                  <Rect x="7.5%" y="17.5%" width="85%" height="65%" fill="black" rx="12" />
+                </Mask>
+              </Defs>
+              <Rect x="0" y="0" width="100%" height="100%" fill="rgba(0,0,0,0.6)" mask="url(#mask)" />
+              <Rect x="7.5%" y="17.5%" width="85%" height="65%" fill="transparent" stroke="rgba(255,255,255,0.8)" strokeWidth="2" strokeDasharray="10, 10" rx="12" />
+            </Svg>
+            <View style={{ position: 'absolute', top: '17.5%', width: '100%', alignItems: 'center', marginTop: -40 }}>
+              <Text style={styles.targetingText}>Position document within the frame</Text>
+            </View>
           </View>
           {liveEdges && liveEdges.found && (
             <View style={StyleSheet.absoluteFill} pointerEvents="none">
               <Svg style={StyleSheet.absoluteFill}>
                 <Polygon
                   points={`${liveEdges.tl.x},${liveEdges.tl.y} ${liveEdges.tr.x},${liveEdges.tr.y} ${liveEdges.br.x},${liveEdges.br.y} ${liveEdges.bl.x},${liveEdges.bl.y}`}
-                  fill="rgba(0, 255, 0, 0.15)"
-                  stroke="#00FF00"
-                  strokeWidth="5"
+                  fill="rgba(0, 0, 0, 0.15)"
+                  stroke="#000000"
+                  strokeWidth="4"
                 />
               </Svg>
             </View>
@@ -357,9 +378,7 @@ export default function App() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFF' },
-  targetingOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
-  targetingBox: { width: '85%', height: '65%', borderWidth: 2, borderColor: 'rgba(255,255,255,0.8)', borderRadius: 12, borderStyle: 'dashed', backgroundColor: 'transparent' },
-  targetingText: { color: 'rgba(255,255,255,0.9)', fontSize: 16, marginTop: 20, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, overflow: 'hidden' },
+  targetingText: { color: 'rgba(255,255,255,0.9)', fontSize: 16, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, overflow: 'hidden' },
   captureOverlay: { position: 'absolute', bottom: 40, width: '100%', flexDirection: 'row', justifyContent: 'space-evenly', alignItems: 'center' },
   captureButton: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(255,255,255,0.3)', justifyContent: 'center', alignItems: 'center' },
   captureButtonInner: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#FFF' },

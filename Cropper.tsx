@@ -98,8 +98,8 @@ export const Cropper: React.FC<CropperProps> = ({ imageWidth, imageHeight, initi
         <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
           <AnimatedPolygon
             animatedProps={animatedProps}
-            fill="rgba(0, 255, 0, 0.2)"
-            stroke="#00FF00"
+            fill="rgba(0, 0, 0, 0.2)"
+            stroke="#000000"
             strokeWidth="2"
           />
         </Svg>
@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: 'rgba(0,255,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     borderWidth: 2,
     borderColor: '#FFF',
   },
